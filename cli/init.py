@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import click
 # from cli.populate_efs import populate_efs
-from cli.populate_efs import populate_efs  
+# from cli.populate_efs import populate_efs  
 
 
 
@@ -132,7 +132,7 @@ CMD ["npm", "start"]
         with open(dockerfile_path, "w") as f:
             f.write(dockerfile_content)
         click.echo("✅ Auto-generated Dockerfile for your project 🎉")
-    click.echo("📦 Now populating EFS with Prometheus/Grafana configs...")
-    populate_efs()
+    click.echo("📦 Now populating EFS with Prometheus/Grafana configs")
+    # populate_efs()
 
 
