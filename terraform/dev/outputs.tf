@@ -21,3 +21,7 @@
   output "frontend_url" {
     value = "http://${aws_lb.frontend_alb.dns_name}"
   }
+  output "grafana_dashboard_url" {
+    value = "http://${aws_lb.frontend_alb.dns_name}/grafana"
+  }
+

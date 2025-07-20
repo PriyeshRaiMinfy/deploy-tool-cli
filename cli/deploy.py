@@ -92,15 +92,55 @@ def deploy_command(version):
             requiresCompatibilities=["FARGATE"],
             cpu="256",
             memory="512",
-            containerDefinitions=[{
-                "name": "frontend",
-                "image": image,
-                "essential": True,
-                "portMappings": [{
-                    "containerPort": 80,
-                    "protocol": "tcp"
-                }]
-            }]
+            # containerDefinitions=[]
+            containerDefinitions=[
+    {
+        "name": "frontend",
+        "image": image,
+        "essential": True,
+        "portMappings": [{"containerPort": 80}]
+    },
+    {
+        "name": "prometheus",
+        "image": "prom/prometheus:latest",
+        "portMappings": [{"containerPort": 9090}],
+        "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+                "awslogs-group": f"/ecs/{ENV}-frontend",
+                "awslogs-region": AWS_REGION,
+                "awslogs-stream-prefix": "ecs"
+            }
+        }
+    },
+    {
+        "name": "grafana",
+        "image": "grafana/grafana:latest",
+        "portMappings": [{"containerPort": 3000}],
+        "environment": [
+            {
+                "name": "GF_SECURITY_ADMIN_PASSWORD",
+                "value": "admin"
+            },
+            {
+                "name": "GF_SERVER_ROOT_URL",
+                "value": "%(protocol)s://%(domain)s/grafana/"
+            },
+            {
+                "name": "GF_SERVER_SERVE_FROM_SUB_PATH",
+                "value": "true"
+            }
+        ],
+        "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+                "awslogs-group": f"/ecs/{ENV}-frontend",
+                "awslogs-region": AWS_REGION,
+                "awslogs-stream-prefix": "ecs"
+            }
+        }
+    }
+]
         )
         task_def_arn = response["taskDefinition"]["taskDefinitionArn"]
         revision = response["taskDefinition"]["revision"]
