@@ -8,7 +8,8 @@ from cli.config import config_command
 # from cli.populate_efs import populate_efs
 from cli.rollback import rollback_command
 from cli.clone import clone_command
-from cli.status import display_command
+# from cli.status import display_command
+from cli.status import setup_monitoring_command
 
 @click.group()
 def cli():
@@ -21,8 +22,9 @@ cli.add_command(config_command)
 cli.add_command(deploy_command)
 cli.add_command(rollback_command)
 # cli.add_command(status_command)
-cli.add_command(display_command)
+# cli.add_command(display_command)
 cli.add_command(clone_command)
+cli.add_command(setup_monitoring_command)
 
 if __name__ == '__main__':
     cli()

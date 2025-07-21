@@ -1,10 +1,15 @@
 provider "aws" {
     region  = var.aws_region
-    profile = var.aws_profile  # SSO Profile name (e.g., "Priyesh")
+    profile = var.aws_profile
 }
 
+# ------------------------------------------------------------------
+# Networking
+# ------------------------------------------------------------------
 resource "aws_vpc" "main" {
-    cidr_block = "10.0.0.0/16"
+    cidr_block           = "10.0.0.0/16"
+    enable_dns_hostnames = true
+    enable_dns_support   = true
     tags = {
         Name = "${var.env}-vpc"
     }
@@ -15,7 +20,6 @@ resource "aws_subnet" "public_1" {
     cidr_block              = "10.0.1.0/24"
     availability_zone       = "ap-south-1a"
     map_public_ip_on_launch = true
-
     tags = {
         Name = "${var.env}-subnet-1"
     }
@@ -26,7 +30,6 @@ resource "aws_subnet" "public_2" {
     cidr_block              = "10.0.2.0/24"
     availability_zone       = "ap-south-1b"
     map_public_ip_on_launch = true
-
     tags = {
         Name = "${var.env}-subnet-2"
     }
@@ -34,7 +37,6 @@ resource "aws_subnet" "public_2" {
 
 resource "aws_internet_gateway" "gw" {
     vpc_id = aws_vpc.main.id
-
     tags = {
         Name = "${var.env}-igw"
     }
@@ -42,12 +44,10 @@ resource "aws_internet_gateway" "gw" {
 
 resource "aws_route_table" "public" {
     vpc_id = aws_vpc.main.id
-
     route {
         cidr_block = "0.0.0.0/0"
         gateway_id = aws_internet_gateway.gw.id
     }
-
     tags = {
         Name = "${var.env}-route-table"
     }
@@ -63,90 +63,90 @@ resource "aws_route_table_association" "b" {
     route_table_id = aws_route_table.public.id
 }
 
-resource "aws_ecs_cluster" "cluster" {
-    name = "${var.env}-ecs-cluster"
-}
-
+# ------------------------------------------------------------------
+# Security Groups
+# ------------------------------------------------------------------
 resource "aws_security_group" "ecs_sg" {
     name        = "${var.env}-ecs-sg"
-    description = "Allow HTTP"
+    description = "Allow HTTP from ALB"
     vpc_id      = aws_vpc.main.id
 
     ingress {
+        description = "Allow HTTP from anywhere"
         from_port   = 80
         to_port     = 80
         protocol    = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
     }
-# -----------------for prometheus and grafana----------------------------
-    ingress {
-        from_port   = 3000
-        to_port     = 3000
-        protocol    = "tcp"
-        cidr_blocks = ["0.0.0.0/0"]
-    }
 
-    ingress {
-        from_port   = 9090
-        to_port     = 9090
-        protocol    = "tcp"
-        cidr_blocks = ["0.0.0.0/0"]
-    }
-# ---------------------------------------------
-    ingress {
-        description = "Allow NFS (EFS access)"
-    from_port   = 2049
-    to_port     = 2049
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Replace with internal CIDR or ECS SG in prod
-    }
-
-# SSH for EC2
-    ingress {
-        description = "Allow SSH access"
-        from_port   = 22
-        to_port     = 22
-        protocol    = "tcp"
-        cidr_blocks = ["0.0.0.0/0"] # Replace with your IP in prod
-    }
-# -----------------------OUTBOUND----------------------
     egress {
         from_port   = 0
         to_port     = 0
         protocol    = "-1"
         cidr_blocks = ["0.0.0.0/0"]
     }
-
-    egress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-}
-
-
     tags = {
         Name = "${var.env}-ecs-sg"
     }
 }
 
+resource "aws_security_group" "monitoring_sg" {
+    name        = "${var.env}-monitoring-sg"
+    description = "Allow traffic for monitoring stack"
+    vpc_id      = aws_vpc.main.id
+
+    ingress {
+        description = "SSH"
+        from_port   = 22
+        to_port     = 22
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"] # For production, restrict to your IP
+    }
+    ingress {
+        description = "Grafana"
+        from_port   = 3000
+        to_port     = 3000
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    ingress {
+        description = "Prometheus"
+        from_port   = 9090
+        to_port     = 9090
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    ingress {
+        description = "Blackbox Exporter"
+        from_port   = 9115
+        to_port     = 9115
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    egress {
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    tags = {
+        Name = "${var.env}-monitoring-sg"
+    }
+}
+
+# ------------------------------------------------------------------
+# IAM Roles
+# ------------------------------------------------------------------
 resource "aws_iam_role" "ecs_task_execution_role" {
     name = "${var.env}-ecsTaskExecutionRole"
-
     assume_role_policy = jsonencode({
         Version = "2012-10-17"
         Statement = [{
             Action    = "sts:AssumeRole"
             Effect    = "Allow"
-            Principal = {
-                Service = "ecs-tasks.amazonaws.com"
-            }
+            Principal = { Service = "ecs-tasks.amazonaws.com" }
         }]
     })
-
-    tags = {
-        Name = "${var.env}-ecs-task-role"
-    }
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
@@ -156,180 +156,29 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
 
 resource "aws_iam_role" "ecs_task_role" {
     name = "${var.env}-ecs-task-role"
-
     assume_role_policy = jsonencode({
         Version = "2012-10-17",
-        Statement = [
-        {
-        Effect = "Allow",
-        Principal = {
-            Service = "ecs-tasks.amazonaws.com"
-        },
-        Action = "sts:AssumeRole"
-        }
-    ]
-    })
-}
-# ------------------------------------------------------------------
-# -------------------- resource block------------------------------
-resource "aws_efs_file_system" "prometheus_efs" {
-    tags = {
-        Name = "${var.env}-prometheus-efs"
-    }
-}
-resource "aws_efs_mount_target" "prometheus_1" {
-    file_system_id  = aws_efs_file_system.prometheus_efs.id
-    subnet_id       = aws_subnet.public_1.id
-    security_groups = [aws_security_group.ecs_sg.id]
-}
-
-resource "aws_efs_mount_target" "prometheus_2" {
-    file_system_id  = aws_efs_file_system.prometheus_efs.id
-    subnet_id       = aws_subnet.public_2.id
-    security_groups = [aws_security_group.ecs_sg.id]
-}
-
-
-
-
-# Add this additional EFS access point specifically for prom
-resource "aws_efs_access_point" "prometheus_ap" {
-    file_system_id = aws_efs_file_system.prometheus_efs.id
-
-    posix_user {
-        uid = 1000
-        gid = 1000
-    }
-
-    root_directory {
-        path = "/prometheus"
-        creation_info {
-            owner_gid   = 1000
-            owner_uid   = 1000
-            permissions = "755"
-        }
-    }
-
-    tags = {
-    Name = "${var.env}-prometheus-ap"
-    }
-}
-# Add this additional EFS access point specifically for Grafana
-resource "aws_efs_access_point" "grafana_ap" {
-    file_system_id = aws_efs_file_system.prometheus_efs.id
-
-    posix_user {
-        uid = 472  # Grafana user ID
-        gid = 472  # Grafana group ID
-    }
-
-    root_directory {
-        path = "/grafana"
-        creation_info {
-            owner_gid   = 472
-            owner_uid   = 472
-            permissions = "755"
-        }
-    }
-
-    tags = {
-        Name = "${var.env}-grafana-ap"
-    }
-}
-resource "aws_cloudwatch_log_group" "ecs_logs" {
-    name              = "/ecs/${var.env}-frontend"
-    retention_in_days = 1
-}
-
-
-# ------------------------------------------------------------------
-resource "aws_iam_role_policy" "ecs_task_efs_policy" {
-    name = "${var.env}-ecs-task-efs-policy"
-    role = aws_iam_role.ecs_task_role.id
-
-    policy = jsonencode({
-        Version = "2012-10-17",
         Statement = [{
-        Action = [
-            "elasticfilesystem:ClientMount",
-            "elasticfilesystem:ClientWrite",
-            "elasticfilesystem:ClientRootAccess",
-            "elasticfilesystem:DescribeMountTargets",
-            "elasticfilesystem:DescribeAccessPoints"
-
-        ],
-            Effect   = "Allow",
-            Resource = aws_efs_file_system.prometheus_efs.arn
-            # resource = aws_efs_file_system.prometheus_efs.arn
+            Effect    = "Allow",
+            Principal = { Service = "ecs-tasks.amazonaws.com" },
+            Action    = "sts:AssumeRole"
         }]
     })
 }
 
-# -------------------------------------efs access------------------------
-resource "aws_iam_role_policy_attachment" "efs_access" {
-    role       = aws_iam_role.ecs_task_execution_role.name
-    policy_arn = "arn:aws:iam::aws:policy/AmazonElasticFileSystemClientFullAccess"
-}
-
 # ------------------------------------------------------------------
-# ALB
-resource "aws_lb" "frontend_alb" {
-    name               = "${var.env}-alb"
-    internal           = false
-    load_balancer_type = "application"
-    subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
-    security_groups    = [aws_security_group.ecs_sg.id]
-
-    tags = {
-        Name = "${var.env}-alb"
-    }
+# CloudWatch & ECS
+# ------------------------------------------------------------------
+resource "aws_cloudwatch_log_group" "ecs_logs" {
+    name              = "/ecs/${var.env}-frontend"
+    retention_in_days = 7
 }
-# FRONTEND - TAREGT GROUP
 
-resource "aws_lb_target_group" "frontend_tg" {
-    name_prefix = "${var.env}-tg"
-    port     = 80
-    protocol = "HTTP"
-    vpc_id   = aws_vpc.main.id
-    target_type = "ip"
-    lifecycle {
-    create_before_destroy = true
-    }
-    health_check {
-        path                = "/"
-        protocol            = "HTTP"
-        matcher             = "200-399"
-        interval            = 30
-        timeout             = 5
-        healthy_threshold   = 2
-        unhealthy_threshold = 2
-    }
-    tags = {
-        Name = "${var.env}-tg"
-    }
+resource "aws_ecs_cluster" "cluster" {
+    name = "${var.env}-ecs-cluster"
 }
-# FRONTEND - ALB LISTNER
-resource "aws_lb_listener" "frontend_listener" {
-    load_balancer_arn = aws_lb.frontend_alb.arn
-    port              = 80
-    protocol          = "HTTP"
-    
-    default_action {
-        type             = "forward"
-        target_group_arn = aws_lb_target_group.frontend_tg.arn
 
-    }
-
-    depends_on = [aws_lb_target_group.frontend_tg,    
-    aws_lb_target_group.grafana_tg]
-}
-# ------------------------------------------------------------------------------------------------------
-
-
-# ------------------------------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------------------------------
-# # ECS TASK DEFINITION
-resource "aws_ecs_task_definition" "frontend_task" { 
+resource "aws_ecs_task_definition" "frontend_task" {
     family                   = "${var.env}-frontend-task"
     network_mode             = "awsvpc"
     requires_compatibilities = ["FARGATE"]
@@ -340,193 +189,22 @@ resource "aws_ecs_task_definition" "frontend_task" {
 
     container_definitions = jsonencode([
         {
-            name      = "frontend"
-            image     = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.env}-frontend-ecr:latest"
+            name  = "frontend"
+            image = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${var.env}-frontend-ecr:latest"
             portMappings = [{
                 containerPort = 80
-                # hostPort      = 80
-            }]
-            logConfiguration= {
-                logDriver= "awslogs",
-                options= {
-                    "awslogs-group" = "/ecs/${var.env}-frontend"
-                    "awslogs-region" = var.aws_region
-                    # "awslogs-region" = "${var.aws_region}"
-                    "awslogs-stream-prefix" = "ecs"
-                }
-            }
-        },
-        {
-            name      = "prometheus"
-            image     = "prom/prometheus:latest"
-            essential = false
-            portMappings = [{
-                containerPort = 9090
-                # hostPort      = 9090
-            }],
-            mountPoints = [{
-                    sourceVolume  = "prometheus-config"
-                    containerPath = "/etc/prometheus"
-                    readOnly = false
             }]
             logConfiguration = {
-                logDriver = "awslogs"
+                logDriver = "awslogs",
                 options = {
-                    "awslogs-group"         = "/ecs/${var.env}-frontend"
+                    "awslogs-group"         = aws_cloudwatch_log_group.ecs_logs.name
                     "awslogs-region"        = var.aws_region
-                    "awslogs-stream-prefix" = "ecs"
-                }
-            }
-        },
-        {
-            name      = "grafana"
-            image     = "grafana/grafana:latest"
-            essential = false
-            portMappings = [{
-                containerPort = 3000
-                # hostPort      = 3000
-            }]
-            environment = [
-                {
-                    name  = "GF_SECURITY_ADMIN_USER"
-                    value = "Priyesh"
-                },
-                {
-                    name  = "GF_SECURITY_ADMIN_PASSWORD"
-                    value = "Delhi"
-                },
-                {
-                    name  = "GF_SERVER_ROOT_URL"
-                    value = "/grafana"
-                },
-                {
-                    name  = "GF_SERVER_SERVE_FROM_SUB_PATH"
-                    value = "true"
-                },
-                {
-                    name  = "GF_PATHS_PROVISIONING"
-                    value = "/mnt/efs/grafana/provisioning"
-                },
-                {
-                    name  = "GF_LOG_LEVEL"
-                    value = "debug"
-                }
-            ]
-            mountPoints = [{
-                sourceVolume  = "grafana-config"
-                containerPath = "/mnt/efs"
-                readOnly      = false
-            },
-            # {
-            #     sourceVolume  = "grafana-provisioning"
-            #     containerPath = "/etc/grafana/provisioning"
-            #     readOnly      = false
-            # }
-            ]
-            logConfiguration= {
-                "logDriver"= "awslogs",
-                "options"= {
-                    "awslogs-group"= "/ecs/${var.env}-frontend"
-                    "awslogs-region"= var.aws_region
-                    "awslogs-stream-prefix"= "ecs"
+                    "awslogs-stream-prefix" = "frontend"
                 }
             }
         }
     ])
-    volume {
-        name = "prometheus-config"
-        # host_path {
-        #     path = "/ecs/prometheus-config"
-        # }
-        # host_path can't be use with the ECS-FARGATE so we will use AWSW EFS - 
-        efs_volume_configuration {
-            file_system_id     = aws_efs_file_system.prometheus_efs.id  # define this!
-            # root_directory     = "/prometheus"
-            root_directory     = "/"
-            transit_encryption = "ENABLED"
-            authorization_config {
-                access_point_id = aws_efs_access_point.prometheus_ap.id
-                iam             = "ENABLED"
-            }
-        }
-    }
-    volume {
-        name = "grafana-config"
-        # host_path {
-        #     path = "/ecs/grafana-config"
-        # }
-        # host_path can't be use with the ECS-FARGATE so we will use AWSW EFS - 
-        efs_volume_configuration {
-            file_system_id     = aws_efs_file_system.prometheus_efs.id  # define this!
-            # root_directory     = "/grafana/provisioning/dashboards"
-            root_directory     = "/"
-            transit_encryption = "ENABLED"
-            authorization_config {
-                # access_point_id = aws_efs_access_point.prometheus_ap.id
-                access_point_id = aws_efs_access_point.grafana_ap.id
-
-                iam             = "ENABLED"
-            }
-        }
-    }
-    volume {
-        name = "grafana-provisioning"
-        efs_volume_configuration {
-            file_system_id     = aws_efs_file_system.prometheus_efs.id
-            # root_directory     = "/grafana/provisioning"
-            root_directory     = "/"
-            transit_encryption = "ENABLED"
-            authorization_config {
-                # access_point_id = aws_efs_access_point.prometheus_ap.id
-                access_point_id = aws_efs_access_point.grafana_ap.id
-                iam             = "ENABLED"
-            }
-        }
-    }
 }
-# ----------------------------------------------------------------------------------------
-# ALB TARGER GROUP - GRAFANA
-resource "aws_lb_target_group" "grafana_tg" {
-    name_prefix = "${var.env}-gf"
-    port        = 3000
-    protocol    = "HTTP"
-    vpc_id      = aws_vpc.main.id
-    target_type = "ip"
-
-    health_check {
-        path                = "/grafana/login"
-        protocol            = "HTTP"
-        matcher             = "200-399"
-        interval            = 30
-        timeout             = 5
-        healthy_threshold   = 2
-        unhealthy_threshold = 2
-    }
-
-    tags = {
-        Name = "${var.env}-grafana-tg"
-    }
-}
-# ALB LISTNER - GRAFANA
-
-resource "aws_lb_listener_rule" "grafana_listener_rule" {
-    listener_arn = aws_lb_listener.frontend_listener.arn
-    priority = 10
-
-    action {
-        type             = "forward"
-        target_group_arn = aws_lb_target_group.grafana_tg.arn
-    }
-
-    condition {
-        path_pattern {
-            values = ["/grafana*","/grafana"]
-        }
-    }
-    depends_on = [aws_lb_listener.frontend_listener]
-}
-# ----------------------------------------------------------------------------------------
-# # ECS SERVICE
 
 resource "aws_ecs_service" "frontend_service" {
     name            = "${var.env}-frontend-service"
@@ -534,185 +212,155 @@ resource "aws_ecs_service" "frontend_service" {
     launch_type     = "FARGATE"
     task_definition = aws_ecs_task_definition.frontend_task.arn
     desired_count   = 1
-
     network_configuration {
         subnets         = [aws_subnet.public_1.id, aws_subnet.public_2.id]
         security_groups = [aws_security_group.ecs_sg.id]
         assign_public_ip = true
     }
-
     load_balancer {
         target_group_arn = aws_lb_target_group.frontend_tg.arn
         container_name   = "frontend"
         container_port   = 80
     }
-    load_balancer {
-        target_group_arn = aws_lb_target_group.grafana_tg.arn
-        container_name   = "grafana"
-        container_port   = 3000
-    }
-
-    depends_on = [aws_lb_listener.frontend_listener,aws_lb_listener_rule.grafana_listener_rule]
-    lifecycle {
-        ignore_changes = [desired_count]
-    }
-    deployment_minimum_healthy_percent = 0
-    deployment_maximum_percent         = 100
-}
-# ===================================================================================================
-# EC2 IAM Role for SSM + EFS + S3
-resource "aws_iam_role" "ec2_ssm_role" {
-    name = "${var.env}-ec2-ssm-role"
-
-    assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-        Effect = "Allow",
-        Principal = {
-        Service = "ec2.amazonaws.com"
-    },
-        Action = "sts:AssumeRole"
-    }]
-    })
+    depends_on = [
+      aws_lb_listener.frontend_listener,
+      aws_lb_listener_rule.grafana_listener_rule
+    ]
 }
 
-resource "aws_iam_role_policy_attachment" "ssm_core" {
-    role       = aws_iam_role.ec2_ssm_role.name
-    policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_instance_profile" "ec2_instance_profile" {
-    name = "${var.env}-ec2-profile"
-    role = aws_iam_role.ec2_ssm_role.name
-}
-
-# EC2 instance (Amazon Linux 2023)
-resource "aws_instance" "efs_uploader" {
-    ami           = "ami-0f5ee92e2d63afc18" # Amazon Linux 2023 (ap-south-1)
-    instance_type = "t3.micro"
-    subnet_id     = aws_subnet.public_1.id
-    key_name      = "prom" # Replace with your key pair name (or manage in Terraform)
-    associate_public_ip_address = true
-
-    vpc_security_group_ids = [aws_security_group.ecs_sg.id]
-    iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
-
+# ------------------------------------------------------------------
+# ALB
+# ------------------------------------------------------------------
+resource "aws_lb" "frontend_alb" {
+    name               = "${var.env}-alb"
+    internal           = false
+    load_balancer_type = "application"
+    subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+    security_groups    = [aws_security_group.ecs_sg.id]
     tags = {
-    Name = "${var.env}-efs-uploader"
+      Name = "${var.env}-alb"
     }
+}
+
+resource "aws_lb_target_group" "frontend_tg" {
+    name_prefix = "${var.env}-tg"
+    port        = 80
+    protocol    = "HTTP"
+    vpc_id      = aws_vpc.main.id
+    target_type = "ip"
+    health_check {
+        path    = "/"
+        matcher = "200"
+    }
+    tags = {
+      Name = "${var.env}-tg"
+    }
+}
+
+resource "aws_lb_target_group" "grafana_tg" {
+    name_prefix = "${var.env}-gf"
+    port        = 3000
+    protocol    = "HTTP"
+    vpc_id      = aws_vpc.main.id
+    target_type = "ip"
+    health_check {
+        path    = "/grafana/login"
+        matcher = "200"
+    }
+    tags = {
+      Name = "${var.env}-grafana-tg"
+    }
+}
+
+resource "aws_lb_listener" "frontend_listener" {
+    load_balancer_arn = aws_lb.frontend_alb.arn
+    port              = 80
+    protocol          = "HTTP"
+    default_action {
+        type             = "forward"
+        target_group_arn = aws_lb_target_group.frontend_tg.arn
+    }
+}
+
+resource "aws_lb_listener_rule" "grafana_listener_rule" {
+    listener_arn = aws_lb_listener.frontend_listener.arn
+    priority     = 10
+    action {
+        type             = "forward"
+        target_group_arn = aws_lb_target_group.grafana_tg.arn
+    }
+    condition {
+        path_pattern {
+            values = ["/grafana*"]
+        }
+    }
+}
+
+# ------------------------------------------------------------------
+# Monitoring Instance
+# ------------------------------------------------------------------
+resource "aws_instance" "monitoring_instance" {
+    # ami           = "ami-0c55b159cbfafe1f0" # Amazon Linux 2 AMI
+    ami           = "ami-0a1235697f4afa8a4" # Amazon Linux 2 AMI
+    instance_type = "t2.micro"
+    subnet_id     = aws_subnet.public_1.id
+    vpc_security_group_ids = [aws_security_group.monitoring_sg.id]
+    # subnet_id     = aws_subnet.public_1.id
+    associate_public_ip_address = true
+    key_name      = "monitoring-key"
 
     user_data = <<-EOF
-                #!/bin/bash
+                #!/bin/bash -xe
+                # Redirect all output to a log file for debugging
+                exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+
+                echo "--- Starting user_data script execution ---"
+
+                # Update packages and install Docker
                 yum update -y
-                yum install -y amazon-efs-utils
-                mkdir -p /mnt/efs
-                mount -t efs -o tls ${aws_efs_file_system.prometheus_efs.id}:/ /mnt/efs
+                yum install -y docker
+
+                # Start and enable Docker so it runs on boot
+                echo "Starting and enabling Docker service"
+                systemctl start docker
+                systemctl enable docker
+                usermod -a -G docker ec2-user
+
+                # --- Install Docker Compose V2 Plugin System-Wide (More Robust) ---
+                echo "Installing Docker Compose V2"
+                DOCKER_CONFIG_DIR="/usr/local/lib/docker/cli-plugins"
+                mkdir -p "$DOCKER_CONFIG_DIR"
+                curl -SL "https://github.com/docker/compose/releases/download/v2.17.2/docker-compose-linux-x86_64" -o "$DOCKER_CONFIG_DIR/docker-compose"
+                chmod +x "$DOCKER_CONFIG_DIR/docker-compose"
+
+                # --- Create directories for monitoring config ---
+                echo "Creating monitoring directories"
+                MONITORING_DIR="/home/ec2-user/monitoring"
+                mkdir -p "$MONITORING_DIR/prometheus"
+                mkdir -p "$MONITORING_DIR/grafana/provisioning/datasources"
+                mkdir -p "$MONITORING_DIR/grafana/provisioning/dashboards"
+                mkdir -p "$MONITORING_DIR/grafana/dashboards"
+                mkdir -p "$MONITORING_DIR/blackbox"
+
+                # Set correct ownership for the user's home directory folders
+                echo "Setting ownership for monitoring directories"
+                chown -R ec2-user:ec2-user "$MONITORING_DIR"
+
+                echo "--- User_data script finished successfully ---"
                 EOF
-}
-# ------------------------------------------------------------------------------------------------
-# ---------- STEP 1: Store provisioning files in locals ----------
-locals {
-    prometheus_yml = <<-EOT
-    global:
-        scrape_interval: 15s
-    scrape_configs:
-        - job_name: 'ecs'
-        static_configs:
-            - targets: ['localhost:9090']
-    EOT
-
-    grafana_datasources = <<-EOT
-    apiVersion: 1
-    datasources:
-        - name: Prometheus
-        type: prometheus
-        access: proxy
-        url: http://localhost:9090
-    EOT
-
-    grafana_dashboards = <<-EOT
-    apiVersion: 1
-    providers:
-        - name: 'ecs'
-        orgId: 1
-        folder: ''
-        type: file
-        options:
-            path: /mnt/efs/grafana/provisioning/dashboards
-    EOT
-
-    ecs_dashboard_json = <<-EOT
-    {
-        "annotations": {
-        "list": [{
-            "builtIn": 1,
-            "datasource": "-- Grafana --",
-            "enable": true,
-            "hide": true,
-            "iconColor": "rgba(0, 211, 255, 1)",
-            "name": "Annotations & Alerts",
-            "type": "dashboard"
-        }]
-        },
-        "panels": [],
-        "schemaVersion": 36,
-        "title": "ECS Monitoring Dashboard",
-        "version": 1
-    }
-    EOT
+    tags = {Name = "${var.env}-monitoring-instance"}
 }
 
-# ---------- STEP 2: Create SSM document to write to /mnt/efs ----------
-resource "aws_ssm_document" "upload_to_efs" {
-    name          = "${var.env}-upload-efs"
-    document_type = "Command"
-    content = jsonencode({
-    schemaVersion = "2.2",
-    description   = "Write monitoring config to EFS",
-    mainSteps = [{
-        action = "aws:runShellScript",
-        name   = "copyFiles",
-        inputs = {
-            runCommand = [
-            "mkdir -p /mnt/efs/grafana/provisioning/dashboards",
-            "mkdir -p /mnt/efs/prometheus",
-            "echo '${replace(local.prometheus_yml, "'", "'\\''")}' > /mnt/efs/prometheus/prometheus.yml",
-            "echo '${replace(local.grafana_datasources, "'", "'\\''")}' > /mnt/efs/grafana/provisioning/datasources.yaml",
-            "echo '${replace(local.grafana_dashboards, "'", "'\\''")}' > /mnt/efs/grafana/provisioning/dashboards.yaml",
-            "echo '${replace(local.ecs_dashboard_json, "'", "'\\''")}' > /mnt/efs/grafana/provisioning/dashboards/ecs-dashboard.json"
-            ]}
-        }]
-    })
-    tags = {
-        Name = "${var.env}-upload-to-efs"
-    }
-}
-
-# ---------- STEP 3: Automatically run the upload via SSM ----------
-resource "aws_ssm_association" "upload_config" {
-    name        = aws_ssm_document.upload_to_efs.name
-    targets {
-    key    = "InstanceIds"
-    values = [aws_instance.efs_uploader.id]
-    }
-    wait_for_success_timeout_seconds = 180
-    depends_on = [aws_instance.efs_uploader]
-}
-
-
-# ===================================================================================================
-#---------------------    applying the auto scaling  to the ECS cluster [FARGATE]    -------------------
-#---------------------    Just an add-on feature  => Only for self satisfaction    -------------------
-
+# ------------------------------------------------------------------
+# Auto Scaling
+# ------------------------------------------------------------------
 resource "aws_appautoscaling_target" "frontend_scaling_target" {
     service_namespace  = "ecs"
-    resource_id        = "service/${var.env}-ecs-cluster/${var.env}-frontend-service"
+    resource_id        = "service/${aws_ecs_cluster.cluster.name}/${aws_ecs_service.frontend_service.name}"
     scalable_dimension = "ecs:service:DesiredCount"
     min_capacity       = 1
     max_capacity       = 4
-
-    depends_on = [aws_ecs_service.frontend_service]
-
+    depends_on         = [aws_ecs_service.frontend_service]
 }
 
 resource "aws_appautoscaling_policy" "frontend_cpu_policy" {
@@ -724,14 +372,12 @@ resource "aws_appautoscaling_policy" "frontend_cpu_policy" {
 
     target_tracking_scaling_policy_configuration {
         predefined_metric_specification {
-        predefined_metric_type = "ECSServiceAverageCPUUtilization"
+            predefined_metric_type = "ECSServiceAverageCPUUtilization"
+        }
+        target_value       = 60.0
+        scale_in_cooldown  = 60
+        scale_out_cooldown = 60
     }
-
-    target_value       = 60.0
-    scale_in_cooldown  = 60
-    scale_out_cooldown = 60
-    }
-    
-    
     depends_on = [aws_ecs_service.frontend_service]
 }
+
