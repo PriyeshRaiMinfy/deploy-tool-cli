@@ -1,5 +1,5 @@
 {
-  "latest_version": "3",
+  "latest_version": "4",
   "history": [
     {
       "version": "v4",
@@ -184,6 +184,18 @@
     {
       "version": "3",
       "revision": 91
+    },
+    {
+      "version": "2",
+      "revision": 93
+    },
+    {
+      "version": "3",
+      "revision": 94
+    },
+    {
+      "version": "4",
+      "revision": 95
     }
   ]
 }

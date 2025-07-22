@@ -2,18 +2,12 @@ import os
 import json
 from pathlib import Path
 import click
-# from cli.populate_efs import populate_efs
-# from cli.populate_efs import populate_efs  
-
-
-
-
 
 @click.command(name='init')
 def init_command():
-
     """
-    Detects frontend framework and sets up deployment config + Dockerfile
+    Detects the frontend framework and sets up the deployment configuration
+    and a suitable Dockerfile.
     """
     cwd = Path.cwd()
     config_path = cwd / ".deployconfig.json"
@@ -30,36 +24,36 @@ def init_command():
             elif "next" in deps:
                 framework = "nextjs"
 
-    # 👇 Hardcoded or dynamically resolved path to your CLI root folder
-    # Update this path to your actual CLI tool location during development
+    # This path should point to the root folder of your CLI tool.
+    # Please update this path to your actual CLI tool location.
     cli_project_root = "C:\\Users\\Minfy\\Desktop\\frontend-deployer-cli"
 
-    # Save config
+    # Save deployment configuration
     deploy_config = {
         "framework": framework,
         "cli_project_root": cli_project_root
     }
-# 
+
     if framework == "react":
         deploy_config["build_command"] = "npm run build"
         deploy_config["output_dir"] = "dist"
     elif framework == "nextjs":
         deploy_config["build_command"] = "npm run build"
-        deploy_config["output_dir"] = ".next"  # or "out" for static export
+        deploy_config["output_dir"] = ".next"
     else:
         deploy_config["build_command"] = None
         deploy_config["output_dir"] = "."
-# 
-#   savin the configurations
+
+    # Saving the configurations
     with open(config_path, "w") as f:
         json.dump(deploy_config, f, indent=2)
 
-    click.echo(f"✅ Detected framework: {framework}")
-    click.echo("✅ Created .deployconfig.json")
+    click.echo(f"---✅ Detected framework: {framework}", fg="purple")
+    click.echo("---✅ Created .deployconfig.json", fg="purple")
 
-    # Auto-generate Dockerfile if not present
+    # Auto-generate Dockerfile if it does not already exist
     if dockerfile_path.exists():
-        click.echo("📦 Dockerfile already exists, skipping auto-generation.")
+        click.echo("----- Dockerfile already exists, skipping auto-generation.", fg="purple")
         return
 
     dockerfile_content = ""
@@ -70,52 +64,51 @@ FROM nginx:alpine
 # Clean default nginx files
 RUN rm -rf /usr/share/nginx/html/*
 
-# Copy only necessary static files (you can adjust these as needed)
+# Copy necessary static files
 COPY index.html /usr/share/nginx/html/
 
 # Optional: If you have a static folder with CSS/JS/assets
 # COPY static/ /usr/share/nginx/html/static/
 
-# Expose the port nginx serves
+# Expose the port nginx serves on
 EXPOSE 80
 
-# Add healthcheck for ECS
+# Add healthcheck for Amazon ECS
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \\
     CMD wget --spider -q http://localhost || exit 1
 """
 
     elif framework == "react":
         dockerfile_content = """
-# Stage 1: Build
+# Stage 1: Build the application
 FROM node:20 AS builder
 WORKDIR /app
 
-# First copy only package files for clean npm install
+# Copy package files first for dependency caching
 COPY package*.json ./
 RUN npm install
 
-# Now copy everything else except what's in .dockerignore
+# Copy the rest of the application source code
 COPY . .
 
-# Clean old build if any, and run fresh build
+# Create a fresh production build
 RUN rm -rf dist && npm run build && ls -al dist
 
-# Stage 2: Serve
+# Stage 2: Serve the application
 FROM nginx:alpine
 WORKDIR /usr/share/nginx/html
 
-# Clean default nginx folder
+# Clean the default nginx folder
 RUN rm -rf ./*
 
-# Copy fresh dist from builder
+# Copy the build output from the builder stage
 COPY --from=builder /app/dist ./
 
-# Custom nginx config
+# Use a custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
-
 """
 
     elif framework == "nextjs":
@@ -131,8 +124,5 @@ CMD ["npm", "start"]
     if dockerfile_content:
         with open(dockerfile_path, "w") as f:
             f.write(dockerfile_content)
-        click.echo("✅ Auto-generated Dockerfile for your project 🎉")
-    click.echo("📦 Now populating EFS with Prometheus/Grafana configs")
-    # populate_efs()
-
-
+        click.echo("---✅ Auto-generated a Dockerfile for your project.", fg="purple")
+    click.echo("----- Now populating EFS with Prometheus/Grafana configs.", fg="purple")

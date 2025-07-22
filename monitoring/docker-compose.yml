@@ -20,6 +20,24 @@ services:
     networks:
       - monitoring
 
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
   blackbox:
     image: prom/blackbox-exporter:latest
     container_name: blackbox
@@ -27,8 +45,12 @@ services:
       - "9115:9115"
     volumes:
       - ./blackbox/config.yml:/config/blackbox.yml
+      # - ./blackbox/blackbox.yml:/config/blackbox.yml
+
     command:
+      # - '--config.file=/config/blackbox.yml'
       - '--config.file=/config/blackbox.yml'
+
     restart: unless-stopped
     networks:
       - monitoring
@@ -40,13 +62,11 @@ services:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning:/etc/grafana/provisioning:z
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:z
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SERVER_ROOT_URL=http://localhost:3000/grafana
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     restart: unless-stopped
     networks:
       - monitoring

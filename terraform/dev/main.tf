@@ -78,23 +78,6 @@ resource "aws_security_group" "ecs_sg" {
         protocol    = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
     }
-
-    egress {
-        from_port   = 0
-        to_port     = 0
-        protocol    = "-1"
-        cidr_blocks = ["0.0.0.0/0"]
-    }
-    tags = {
-        Name = "${var.env}-ecs-sg"
-    }
-}
-
-resource "aws_security_group" "monitoring_sg" {
-    name        = "${var.env}-monitoring-sg"
-    description = "Allow traffic for monitoring stack"
-    vpc_id      = aws_vpc.main.id
-
     ingress {
         description = "SSH"
         from_port   = 22
@@ -122,6 +105,65 @@ resource "aws_security_group" "monitoring_sg" {
         to_port     = 9115
         protocol    = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
+    }
+
+    egress {
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    tags = {
+        Name = "${var.env}-ecs-sg"
+    }
+}
+
+resource "aws_security_group" "monitoring_sg" {
+    name        = "${var.env}-monitoring-sg"
+    description = "Allow traffic for monitoring stack"
+    vpc_id      = aws_vpc.main.id
+
+    ingress {
+        description = "Allow HTTP from anywhere"
+        from_port   = 80
+        to_port     = 80
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    ingress {
+        description = "SSH"
+        from_port   = 22
+        to_port     = 22
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"] # For production, restrict to your IP
+    }
+    ingress {
+        description = "Grafana"
+        from_port   = 3000
+        to_port     = 3000
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    ingress {
+        description = "Prometheus"
+        from_port   = 9090
+        to_port     = 9090
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    ingress {
+        description = "Blackbox Exporter"
+        from_port   = 9115
+        to_port     = 9115
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    ingress {
+    from_port         = 9100
+    to_port           = 9100
+    protocol          = "tcp"
+    # security_group_id = aws_security_group.ecs_sg.id
+    # source_security_group_id = aws_security_group.monitoring_sg.id
     }
     egress {
         from_port   = 0
@@ -222,10 +264,10 @@ resource "aws_ecs_service" "frontend_service" {
         container_name   = "frontend"
         container_port   = 80
     }
-    depends_on = [
-      aws_lb_listener.frontend_listener,
-      aws_lb_listener_rule.grafana_listener_rule
-    ]
+    # depends_on = [
+    #   aws_lb_listener.frontend_listener,
+    #   aws_lb_listener_rule.grafana_listener_rule
+    # ]
 }
 
 # ------------------------------------------------------------------
@@ -257,20 +299,20 @@ resource "aws_lb_target_group" "frontend_tg" {
     }
 }
 
-resource "aws_lb_target_group" "grafana_tg" {
-    name_prefix = "${var.env}-gf"
-    port        = 3000
-    protocol    = "HTTP"
-    vpc_id      = aws_vpc.main.id
-    target_type = "ip"
-    health_check {
-        path    = "/grafana/login"
-        matcher = "200"
-    }
-    tags = {
-      Name = "${var.env}-grafana-tg"
-    }
-}
+# resource "aws_lb_target_group" "grafana_tg" {
+#     name_prefix = "${var.env}-gf"
+#     port        = 3000
+#     protocol    = "HTTP"
+#     vpc_id      = aws_vpc.main.id
+#     target_type = "ip"
+#     health_check {
+#         path    = "/grafana/login"
+#         matcher = "200"
+#     }
+#     tags = {
+#       Name = "${var.env}-grafana-tg"
+#     }
+# }
 
 resource "aws_lb_listener" "frontend_listener" {
     load_balancer_arn = aws_lb.frontend_alb.arn
@@ -282,19 +324,19 @@ resource "aws_lb_listener" "frontend_listener" {
     }
 }
 
-resource "aws_lb_listener_rule" "grafana_listener_rule" {
-    listener_arn = aws_lb_listener.frontend_listener.arn
-    priority     = 10
-    action {
-        type             = "forward"
-        target_group_arn = aws_lb_target_group.grafana_tg.arn
-    }
-    condition {
-        path_pattern {
-            values = ["/grafana*"]
-        }
-    }
-}
+# resource "aws_lb_listener_rule" "grafana_listener_rule" {
+#     listener_arn = aws_lb_listener.frontend_listener.arn
+#     priority     = 10
+#     action {
+#         type             = "forward"
+#         target_group_arn = aws_lb_target_group.grafana_tg.arn
+#     }
+#     condition {
+#         path_pattern {
+#             values = ["/grafana*","/grafana/*"]
+#         }
+#     }
+# }
 
 # ------------------------------------------------------------------
 # Monitoring Instance
@@ -303,38 +345,27 @@ resource "aws_instance" "monitoring_instance" {
     # ami           = "ami-0c55b159cbfafe1f0" # Amazon Linux 2 AMI
     ami           = "ami-0a1235697f4afa8a4" # Amazon Linux 2 AMI
     instance_type = "t2.micro"
-    subnet_id     = aws_subnet.public_1.id
-    vpc_security_group_ids = [aws_security_group.monitoring_sg.id]
     # subnet_id     = aws_subnet.public_1.id
+    subnet_id     = aws_subnet.public_1.id
+    # vpc_security_group_ids = [aws_security_group.monitoring_sg.id]
+    vpc_security_group_ids = [aws_security_group.ecs_sg.id]
     associate_public_ip_address = true
     key_name      = "monitoring-key"
 
     user_data = <<-EOF
                 #!/bin/bash -xe
-                # Redirect all output to a log file for debugging
                 exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-
-                echo "--- Starting user_data script execution ---"
-
-                # Update packages and install Docker
                 yum update -y
                 yum install -y docker
-
-                # Start and enable Docker so it runs on boot
-                echo "Starting and enabling Docker service"
                 systemctl start docker
                 systemctl enable docker
                 usermod -a -G docker ec2-user
 
-                # --- Install Docker Compose V2 Plugin System-Wide (More Robust) ---
-                echo "Installing Docker Compose V2"
                 DOCKER_CONFIG_DIR="/usr/local/lib/docker/cli-plugins"
                 mkdir -p "$DOCKER_CONFIG_DIR"
                 curl -SL "https://github.com/docker/compose/releases/download/v2.17.2/docker-compose-linux-x86_64" -o "$DOCKER_CONFIG_DIR/docker-compose"
                 chmod +x "$DOCKER_CONFIG_DIR/docker-compose"
 
-                # --- Create directories for monitoring config ---
-                echo "Creating monitoring directories"
                 MONITORING_DIR="/home/ec2-user/monitoring"
                 mkdir -p "$MONITORING_DIR/prometheus"
                 mkdir -p "$MONITORING_DIR/grafana/provisioning/datasources"
@@ -342,14 +373,17 @@ resource "aws_instance" "monitoring_instance" {
                 mkdir -p "$MONITORING_DIR/grafana/dashboards"
                 mkdir -p "$MONITORING_DIR/blackbox"
 
-                # Set correct ownership for the user's home directory folders
-                echo "Setting ownership for monitoring directories"
                 chown -R ec2-user:ec2-user "$MONITORING_DIR"
-
-                echo "--- User_data script finished successfully ---"
                 EOF
     tags = {Name = "${var.env}-monitoring-instance"}
 }
+
+
+# resource "aws_lb_target_group_attachment" "grafana_ec2_attachment" {
+#     target_group_arn = aws_lb_target_group.grafana_tg.arn
+#     target_id        = aws_instance.monitoring_instance.private_ip
+#     port             = 3000
+# }
 
 # ------------------------------------------------------------------
 # Auto Scaling
