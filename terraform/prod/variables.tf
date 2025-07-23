@@ -1,29 +1,20 @@
-variable "aws_region" {
+variable "env" {
+  description = "The deployment environment (e.g., dev, prod)."
   type        = string
-  description = "AWS region"
+  default     = "prod" # You can set a default value
+}
+
+variable "aws_region" {
+  description = "The AWS region for the resources."
+  type        = string
 }
 
 variable "aws_profile" {
+  description = "The AWS CLI profile to use."
   type        = string
-  description = "AWS SSO profile name"
 }
 
-variable "vpc_cidr" {
+variable "aws_account_id" {
+  description = "The AWS Account ID where the ECR repository is located."
   type        = string
-  description = "CIDR block for VPC"
-}
-
-variable "subnet_cidrs" {
-  type        = list(string)
-  description = "CIDR blocks for subnets"
-}
-
-variable "ecr_repo_name" {
-  type        = string
-  description = "ECR repo name"
-}
-
-variable "ecs_cluster_name" {
-  type        = string
-  description = "ECS cluster name"
 }

@@ -1,5 +1,5 @@
 {
-  "latest_version": "4",
+  "latest_version": "1",
   "history": [
     {
       "version": "v4",
@@ -196,6 +196,66 @@
     {
       "version": "4",
       "revision": 95
+    },
+    {
+      "version": "v2",
+      "revision": 98
+    },
+    {
+      "version": "3",
+      "revision": 99
+    },
+    {
+      "version": "1",
+      "revision": 100
+    },
+    {
+      "version": "1",
+      "revision": 101
+    },
+    {
+      "version": "1",
+      "revision": 102
+    },
+    {
+      "version": "1",
+      "revision": 103
+    },
+    {
+      "version": "1",
+      "revision": 104
+    },
+    {
+      "version": "1",
+      "revision": 2
+    },
+    {
+      "version": "1",
+      "revision": 3
+    },
+    {
+      "version": "2",
+      "revision": 105
+    },
+    {
+      "version": "3",
+      "revision": 106
+    },
+    {
+      "version": "1",
+      "revision": 107
+    },
+    {
+      "version": "1",
+      "revision": 108
+    },
+    {
+      "version": "1",
+      "revision": 109
+    },
+    {
+      "version": "1",
+      "revision": 110
     }
   ]
 }

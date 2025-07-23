@@ -35,12 +35,12 @@ def config_command():
         "aws_account_id": int(account_id)
     }
 
-    # Write to file
+    # Write the final config data to file -> .awsconfig.json:::
     with open(".awsconfig.json", "w") as f:
         json.dump(config_data, f, indent=2)
-
+    # click.echo("✅ Deployment initialized in the ", f" {environment}", " environment:")
     click.echo("✅ .awsconfig.json created with:")
-    click.echo(json.dumps(config_data, indent=2))
+    # click.echo(json.dumps(config_data, indent=2))
 
 
 def load_config():
