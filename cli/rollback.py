@@ -28,9 +28,8 @@ def rollback_command(version):
         click.echo(f"❌ Failed to authenticate AWS session: {e}")
         return
 
-    # 🔍 Load version.json and find the target revision
     if not versionjson_path.exists():
-        click.echo("❌ version.json not found.")
+        click.echo("---- version.json not found.")
         return
 
     with open(versionjson_path, "r") as vf:
@@ -51,7 +50,7 @@ def rollback_command(version):
     click.echo(f"📦 Found revision {revision} for version '{version}'")
     click.echo(f"🔁 Rolling back ECS service '{service_name}' to task definition: {task_definition}")
 
-    # ✅ Rollback via ECS Update
+
     try:
         ecs.update_service(
             cluster=cluster_name,
@@ -63,21 +62,21 @@ def rollback_command(version):
         click.echo(f"❌ Failed to update ECS service: {e}")
         return
 
-    # ⏳ Wait until ECS service becomes stable again
-    click.echo("⏳ Waiting for ECS Service to stabilize...")
+
+    click.echo("---- Waiting for ECS Service to stabilize...")
     while True:
         res = ecs.describe_services(cluster=cluster_name, services=[service_name])
         deployments = res["services"][0]["deployments"]
         primary = next((d for d in deployments if d["status"] == "PRIMARY"), None)
 
         if primary and primary["desiredCount"] == primary["runningCount"] and primary["pendingCount"] == 0:
-            click.echo("✅ Rollback complete. Service is stable.")
+            click.echo("---- Rollback complete. Service is stable.")
             break
 
         click.echo(f"🔁 Running: {primary['runningCount']} / Desired: {primary['desiredCount']}")
         time.sleep(5)
 
-    # 🌐 Show ALB URL if available
+
     try:
         alb_name = f"{ENV}-alb"
         albs = elbv2.describe_load_balancers(Names=[alb_name])

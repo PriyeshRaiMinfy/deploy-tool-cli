@@ -83,7 +83,7 @@ def deploy_command(version):
     service_name = f"{ENV}-frontend-service"
     execution_role_arn = f"arn:aws:iam::{account_id}:role/{ENV}-ecsTaskExecutionRole"
 
-    try:
+    try:    
         click.echo("---- Registering ECS Task Definition...")
         response = ecs.register_task_definition(
             family=task_family,
